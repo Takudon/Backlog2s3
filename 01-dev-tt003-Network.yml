@@ -1,0 +1,228 @@
+# ===================================================================
+Description: >
+    Create standard network for Backlog2S3 System.
+
+# ===================================================================
+Parameters:
+    Environment: 
+        Description: An environment type. Development, Validation, Staging, Commercial.
+        Type: String
+        AllowedValues: [deploy, dev, val, stg, com]
+        Default: deploy
+
+    ProjectCode:
+        Description: Project code of system. (ttNNN)
+        Type: String
+        Default: tt003
+
+    VpcCIDR:
+        Description: VPC CIDR
+        Type: String
+        Default: 10.0.0.0/16
+
+    PublicSubnetCIDR1:
+        Description: Public Subnet CIDR
+        Type: String
+        Default: 10.0.0.0/24
+
+    PublicSubnetCIDR2:
+        Description: Public Subnet CIDR
+        Type: String
+        Default: 10.0.1.0/24
+
+    PrivateSubnetCIDR1:
+        Description: Public Subnet CIDR
+        Type: String
+        Default: 10.0.2.0/24
+
+    PrivateSubnetCIDR2:
+        Description: Public Subnet CIDR
+        Type: String
+        Default: 10.0.3.0/24
+
+# ===================================================================
+Metadata:
+    AWS::CloudFormation::Interface:
+        ParameterGroups:
+            -
+                Label:
+                    default: System configuration.
+                Parameters:
+                    - Environment
+                    - ProjectCode
+            -
+                Label:
+                    default: Network configuration.
+                Parameters:
+                    - VpcCIDR
+                    - PublicSubnetCIDR1
+                    - PublicSubnetCIDR2
+                    - PrivateSubnetCIDR1
+                    - PrivateSubnetCIDR2
+
+# ===================================================================
+Mappings:
+    # AWS Region ------------------------------------------
+    AWSRegionToRGN:
+        ap-northeast-1:
+            RGN: apne1
+        us-east-1:
+            RGN: uset1
+
+
+# ===================================================================
+Resources:
+    # VPC -------------------------------------------------
+    myVpc:
+        Type: AWS::EC2::VPC
+        Properties:
+            CidrBlock: !Ref VpcCIDR
+            Tags: 
+                - Key: Name 
+                  Value: !Join ["-", [vpc, !Ref Environment, !FindInMap [AWSRegionToRGN, !Ref "AWS::Region", RGN], !Ref ProjectCode]]
+
+    myIgw:
+        Type: AWS::EC2::InternetGateway
+        Properties:
+            Tags: 
+                - Key: Name 
+                  Value: !Join ["-", [igw, !Ref Environment, !FindInMap [AWSRegionToRGN, !Ref "AWS::Region", RGN], !Ref ProjectCode]]
+
+    myIgwAttachment:
+        Type: AWS::EC2::VPCGatewayAttachment
+        Properties:
+            InternetGatewayId: !Ref myIgw
+            VpcId: !Ref myVpc
+
+    myPublicSubnet1:
+        Type: AWS::EC2::Subnet
+        Properties:
+            VpcId: !Ref myVpc
+            AvailabilityZone: !Select [ 0, !GetAZs ]
+            CidrBlock: !Ref PublicSubnetCIDR1
+            Tags: 
+                - Key: Name 
+                  Value: !Join ["-", [publicSubnet1, !Ref Environment, !FindInMap [AWSRegionToRGN, !Ref "AWS::Region", RGN], !Ref ProjectCode]]
+
+    myPublicSubnet2:
+        Type: AWS::EC2::Subnet
+        Properties:
+            VpcId: !Ref myVpc
+            AvailabilityZone: !Select [ 0, !GetAZs ]
+            CidrBlock: !Ref PublicSubnetCIDR2
+            Tags: 
+                - Key: Name 
+                  Value: !Join ["-", [publicSubnet2, !Ref Environment, !FindInMap [AWSRegionToRGN, !Ref "AWS::Region", RGN], !Ref ProjectCode]]
+
+    myPrivateSubnet1:
+        Type: AWS::EC2::Subnet
+        Properties:
+            VpcId: !Ref myVpc
+            AvailabilityZone: !Select [ 0, !GetAZs ]
+            CidrBlock: !Ref PrivateSubnetCIDR1
+            Tags: 
+                - Key: Name 
+                  Value: !Join ["-", [privateSubnet1, !Ref Environment, !FindInMap [AWSRegionToRGN, !Ref "AWS::Region", RGN], !Ref ProjectCode]]
+
+    myPrivateSubnet2:
+        Type: AWS::EC2::Subnet
+        Properties:
+            VpcId: !Ref myVpc
+            AvailabilityZone: !Select [ 1, !GetAZs ]
+            CidrBlock: !Ref PrivateSubnetCIDR2
+            Tags: 
+                - Key: Name 
+                  Value: !Join ["-", [privateSubnet2, !Ref Environment, !FindInMap [AWSRegionToRGN, !Ref "AWS::Region", RGN], !Ref ProjectCode]]
+
+    myNatGatewayEIP:
+        Type: AWS::EC2::EIP
+        DependsOn: myIgwAttachment
+        Properties: 
+            Domain: vpc
+
+    myNatGateway:
+        Type: AWS::EC2::NatGateway
+        Properties:
+            SubnetId: !Ref myPublicSubnet1
+            AllocationId: !GetAtt myNatGatewayEIP.AllocationId
+            Tags: 
+                - Key: Name 
+                  Value: !Join ["-", [natGateway, !Ref Environment, !FindInMap [AWSRegionToRGN, !Ref "AWS::Region", RGN], !Ref ProjectCode]]
+
+    publicRouteTable:
+        Type: AWS::EC2::RouteTable
+        Properties:
+            VpcId: !Ref myVpc
+            Tags: 
+                - Key: Name 
+                  Value: !Join ["-", [publicRouteTable, !Ref Environment, !FindInMap [AWSRegionToRGN, !Ref "AWS::Region", RGN], !Ref ProjectCode]]
+
+    publicRoute:
+        Type: AWS::EC2::Route
+        DependsOn: myIgwAttachment
+        Properties:
+            DestinationCidrBlock: 0.0.0.0/0
+            GatewayId: !Ref myIgw
+            RouteTableId: !Ref publicRouteTable
+
+    publicRouteTableAssociation:
+        Type: AWS::EC2::SubnetRouteTableAssociation
+        Properties:
+            RouteTableId: !Ref publicRouteTable
+            SubnetId: !Ref myPublicSubnet1
+
+    privateRouteTable1:
+        Type: AWS::EC2::RouteTable
+        Properties:
+            VpcId: !Ref myVpc
+            Tags: 
+                - Key: Name 
+                  Value: !Join ["-", [priavteRouteTable1, !Ref Environment, !FindInMap [AWSRegionToRGN, !Ref "AWS::Region", RGN], !Ref ProjectCode]]
+
+    privateRoute1:
+        Type: AWS::EC2::Route
+        Properties:
+            DestinationCidrBlock: 0.0.0.0/0
+            NatGatewayId: !Ref myNatGateway
+            RouteTableId: !Ref privateRouteTable1
+
+    privateRouteTable2:
+        Type: AWS::EC2::RouteTable
+        Properties:
+            VpcId: !Ref myVpc
+            Tags: 
+                - Key: Name 
+                  Value: !Join ["-", [privateRouteTable2, !Ref Environment, !FindInMap [AWSRegionToRGN, !Ref "AWS::Region", RGN], !Ref ProjectCode]]
+
+    privateRoute2:
+        Type: AWS::EC2::Route
+        Properties:
+            DestinationCidrBlock: 0.0.0.0/0
+            NatGatewayId: !Ref myNatGateway
+            RouteTableId: !Ref privateRouteTable2
+    
+    privateRouteTableAssociation1:
+        Type: AWS::EC2::SubnetRouteTableAssociation
+        Properties:
+            RouteTableId: !Ref privateRouteTable1
+            SubnetId: !Ref myPrivateSubnet1
+
+    privateRouteTableAssociation2:
+        Type: AWS::EC2::SubnetRouteTableAssociation
+        Properties:
+            RouteTableId: !Ref privateRouteTable2
+            SubnetId: !Ref myPrivateSubnet2
+
+# Security Group --------------------------------------
+    internalSecurityGroup:
+        Type: AWS::EC2::SecurityGroup
+        Properties: 
+            VpcId: !Ref myVpc
+            GroupName: !Join ["-",[secGroup,!Ref Environment, !FindInMap [AWSRegionToRGN, !Ref "AWS::Region", RGN], !Ref ProjectCode, internal]]
+            GroupDescription: CommonInternalSecurityGroup
+            SecurityGroupIngress:
+                - CidrIp: !Ref VpcCIDR
+                  IpProtocol: '-1'
+            Tags: 
+                - Key: Name
+                  Value: !Join ["-",[secGroup,!Ref Environment, !FindInMap [AWSRegionToRGN, !Ref "AWS::Region", RGN], !Ref ProjectCode, internal]]
